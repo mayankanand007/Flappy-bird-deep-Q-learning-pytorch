@@ -12,6 +12,7 @@ import numpy as np
 
 
 class FlappyBird(object):
+    # Makes the Flappy Bird display window
     init()
     fps_clock = time.Clock()
     screen_width = 288

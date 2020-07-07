@@ -17,6 +17,8 @@ from src.utils import pre_processing
 
 
 def get_args():
+
+    # The various arguments thart can be passed to train the model 
     parser = argparse.ArgumentParser(
         """Implementation of Deep Q Network to play Flappy Bird""")
     parser.add_argument("--image_size", type=int, default=84, help="The common width and height for all images")
@@ -81,6 +83,15 @@ def train(opt):
             next_image = next_image.cuda()
         next_state = torch.cat((state[0, 1:, :, :], next_image))[None, :, :, :]
         replay_memory.append([state, action, reward, next_state, terminal])
+
+        print('------')
+        print('state is ' + str(state))
+        print('action is ' + str(action))
+        print('reward is ' + str(reward))
+        print('next_state is ' + str(next_state))
+        print('terminal is ' + str(terminal))
+        print('------')
+        
         if len(replay_memory) > opt.replay_memory_size:
             del replay_memory[0]
         batch = sample(replay_memory, min(len(replay_memory), opt.batch_size))

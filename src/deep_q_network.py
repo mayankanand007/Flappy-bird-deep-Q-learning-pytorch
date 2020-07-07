@@ -3,6 +3,8 @@
 """
 import torch.nn as nn
 
+# 3 layered convolutional network 
+
 class DeepQNetwork(nn.Module):
     def __init__(self):
         super(DeepQNetwork, self).__init__()
