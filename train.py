@@ -61,8 +61,21 @@ def train(opt):
 
     replay_memory = []
     iter = 0
+    state_values = np.zeros(opt.num_iters) # initial guess = 0 value
+    eligibility = np.zeros(opt.num_iters)
+    lamb = 0.95 # the lambda weighting factor
+    state = env.reset() # start the environment, get the initial state
+    # Run the algorithm for some episodes
     while iter < opt.num_iters:
         prediction = model(state)[0]
+        ########
+        # act according to policy
+        action = policy(state)
+        next_state, reward, done = env.step(action)
+        # Update eligibilities
+        eligibility *= lamb * opt.gamma
+        eligibility[state] += 1.0
+        ###############
         # Exploration or exploitation
         epsilon = opt.final_epsilon + (
                 (opt.num_iters - iter) * (opt.initial_epsilon - opt.final_epsilon) / opt.num_iters)
@@ -82,6 +95,16 @@ def train(opt):
         if torch.cuda.is_available():
             next_image = next_image.cuda()
         next_state = torch.cat((state[0, 1:, :, :], next_image))[None, :, :, :]
+
+        #######
+        td_error = reward + opt.gamma * state_values[next_state] - state_values[state]
+        state_values = state_values + alpha * td_error * eligibility
+
+        if done:
+            state = env.reset()
+        else:
+            state = new_state
+        ############
         replay_memory.append([state, action, reward, next_state, terminal])
 
         print('------')
@@ -91,7 +114,7 @@ def train(opt):
         print('next_state is ' + str(next_state))
         print('terminal is ' + str(terminal))
         print('------')
-        
+
         if len(replay_memory) > opt.replay_memory_size:
             del replay_memory[0]
         batch = sample(replay_memory, min(len(replay_memory), opt.batch_size))
