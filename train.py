@@ -14,6 +14,55 @@ from tensorboardX import SummaryWriter
 from src.deep_q_network import DeepQNetwork
 from src.flappy_bird import FlappyBird
 from src.utils import pre_processing
+from src.utils import NaivePrioritizedBuffer
+import matplotlib.pyplot as plt
+import math
+import random
+
+import gym
+import torch.optim as optim
+import torch.autograd as autograd
+import torch.nn.functional as F
+
+def compute_td_loss(batch_size, beta):
+    state, action, reward, next_state, done, indices, weights = replay_buffer.sample(
+        batch_size, beta)
+
+    state = torch.FloatTensor(np.float32(state))
+    next_state = torch.FloatTensor(np.float32(next_state))
+    action = torch.LongTensor(action)
+    reward = torch.FloatTensor(reward)
+    done = torch.FloatTensor(done)
+    weights = torch.FloatTensor(weights)
+
+    q_values = current_model(state)
+    next_q_values = target_model(next_state)
+
+    q_value = q_values.gather(1, action.unsqueeze(1)).squeeze(1)
+    next_q_value = next_q_values.max(1)[0]
+    expected_q_value = reward + gamma * next_q_value * (1 - done)
+
+    loss = (q_value - expected_q_value.detach()).pow(2) * weights
+    prios = loss + 1e-5
+    loss = loss.mean()
+
+    optimizer.zero_grad()
+    loss.backward()
+    replay_buffer.update_priorities(indices, prios.data.cpu().numpy())
+    optimizer.step()
+
+    return loss
+
+
+def plot(frame_idx, rewards, losses):
+    plt.figure(figsize=(20, 5))
+    plt.subplot(131)
+    plt.title('frame %s. reward: %s' % (frame_idx, np.mean(rewards[-10:])))
+    plt.plot(rewards)
+    plt.subplot(132)
+    plt.title('loss')
+    plt.plot(losses)
+    plt.show()
 
 
 def get_args():
@@ -48,7 +97,11 @@ def train(opt):
     writer = SummaryWriter(opt.log_path)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-6)
     criterion = nn.MSELoss()
+
+    # Initialization of the game state
     game_state = FlappyBird()
+
+    # Getting the important stuff 
     image, reward, terminal = game_state.next_frame(0)
     image = pre_processing(image[:game_state.screen_width, :int(game_state.base_y)], opt.image_size, opt.image_size)
     image = torch.from_numpy(image)
@@ -57,7 +110,11 @@ def train(opt):
         image = image.cuda()
     state = torch.cat(tuple(image for _ in range(4)))[None, :, :, :]
 
+    # Initialization of the replay buffer
     replay_memory = []
+
+    # replay_buffer = NaivePrioritizedBuffer(100000)
+
     iter = 0
     while iter < opt.num_iters:
         prediction = model(state)[0]
@@ -80,9 +137,12 @@ def train(opt):
         if torch.cuda.is_available():
             next_image = next_image.cuda()
         next_state = torch.cat((state[0, 1:, :, :], next_image))[None, :, :, :]
+
         replay_memory.append([state, action, reward, next_state, terminal])
+
         if len(replay_memory) > opt.replay_memory_size:
             del replay_memory[0]
+            
         batch = sample(replay_memory, min(len(replay_memory), opt.batch_size))
         state_batch, action_batch, reward_batch, next_state_batch, terminal_batch = zip(*batch)
 
@@ -106,7 +166,6 @@ def train(opt):
 
         q_value = torch.sum(current_prediction_batch * action_batch, dim=1)
         optimizer.zero_grad()
-        # y_batch = y_batch.detach()
         loss = criterion(q_value, y_batch)
         loss.backward()
         optimizer.step()

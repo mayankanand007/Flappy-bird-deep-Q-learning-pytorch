@@ -2,6 +2,7 @@
 @author: Viet Nguyen <nhviet1009@gmail.com>
 """
 import torch.nn as nn
+import random
 
 class DeepQNetwork(nn.Module):
     def __init__(self):
@@ -30,3 +31,11 @@ class DeepQNetwork(nn.Module):
         output = self.fc2(output)
 
         return output
+
+    def act(self, state, epsilon):
+        if random.random() > epsilon:
+            q_value = self.forward(state)
+            action = q_value.max(1)[1].data[0]
+        else:
+            action = random.randrange(env.action_space.n)
+        return action
