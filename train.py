@@ -61,20 +61,17 @@ def train(opt):
 
     replay_memory = []
     iter = 0
+    #######
     state_values = np.zeros(opt.num_iters) # initial guess = 0 value
     eligibility = np.zeros(opt.num_iters)
     lamb = 0.95 # the lambda weighting factor
-    state = env.reset() # start the environment, get the initial state
+    # state = env.reset() # start the environment, get the initial state
+    #######
     # Run the algorithm for some episodes
     while iter < opt.num_iters:
         prediction = model(state)[0]
         ########
-        # act according to policy
-        action = policy(state)
-        next_state, reward, done = env.step(action)
-        # Update eligibilities
-        eligibility *= lamb * opt.gamma
-        eligibility[state] += 1.0
+        
         ###############
         # Exploration or exploitation
         epsilon = opt.final_epsilon + (
@@ -87,8 +84,15 @@ def train(opt):
         else:
 
             action = torch.argmax(prediction)
-
+        
+        # act according to policy
+        # action = policy(state)
         next_image, reward, terminal = game_state.next_frame(action)
+        # Update eligibilities
+        eligibility *= lamb * opt.gamma
+        eligibility[iter] += 1.0
+
+        # next_image, reward, terminal = game_state.next_frame(action)
         next_image = pre_processing(next_image[:game_state.screen_width, :int(game_state.base_y)], opt.image_size,
                                     opt.image_size)
         next_image = torch.from_numpy(next_image)
@@ -96,14 +100,16 @@ def train(opt):
             next_image = next_image.cuda()
         next_state = torch.cat((state[0, 1:, :, :], next_image))[None, :, :, :]
 
-        #######
-        td_error = reward + opt.gamma * state_values[next_state] - state_values[state]
-        state_values = state_values + alpha * td_error * eligibility
+        ####### 
+        if iter > 0:
+            td_error = reward + opt.gamma * state_values[iter] - state_values[iter - 1]
+            state_values = state_values + 1e-6 * td_error * eligibility
+            print('td_error is' + str(td_error))
 
-        if done:
-            state = env.reset()
-        else:
-            state = new_state
+        # if done:
+        #     state = env.reset()
+        # else:
+        #     state = new_state
         ############
         replay_memory.append([state, action, reward, next_state, terminal])
 

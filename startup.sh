@@ -8,5 +8,5 @@ pip3 install -r requirements.txt
 
 
 # Train
-python3 train.py --gamma 0.98
+python3 train.py --gamma 0.98 > log.txt
 
