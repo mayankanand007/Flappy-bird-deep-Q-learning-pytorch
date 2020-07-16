@@ -5,6 +5,7 @@ import argparse
 import os
 import shutil
 from random import random, randint, sample
+from heapq import nlargest
 
 import numpy as np
 import torch
@@ -13,6 +14,7 @@ from tensorboardX import SummaryWriter
 
 from src.deep_q_network import DeepQNetwork
 from src.flappy_bird import FlappyBird
+from matplotlib import pyplot as plt
 from src.utils import pre_processing
 
 
@@ -28,15 +30,27 @@ def get_args():
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--initial_epsilon", type=float, default=0.1)
     parser.add_argument("--final_epsilon", type=float, default=1e-4)
-    parser.add_argument("--num_iters", type=int, default=2000000)
+    parser.add_argument("--num_iters", type=int, default=20000)
     parser.add_argument("--replay_memory_size", type=int, default=50000,
                         help="Number of epoches between testing phases")
     parser.add_argument("--log_path", type=str, default="tensorboard")
     parser.add_argument("--saved_path", type=str, default="trained_models")
+    ###
+    parser.add_argument("--beta", type=float, default=0.4)
+    ###
+
 
     args = parser.parse_args()
     return args
 
+def sample_priority(batch_size,buffer):
+
+    if len(buffer) < batch_size:
+        return buffer
+
+    print('sampling size' + str(batch_size))
+
+    return nlargest(batch_size, buffer, key=lambda e:e[1])
 
 def train(opt):
     if torch.cuda.is_available():
@@ -67,6 +81,9 @@ def train(opt):
     lamb = 0.95 # the lambda weighting factor
     # state = env.reset() # start the environment, get the initial state
     #######
+    rewards = []
+    time_step = []
+    priority_queue = []
     # Run the algorithm for some episodes
     while iter < opt.num_iters:
         prediction = model(state)[0]
@@ -101,10 +118,18 @@ def train(opt):
         next_state = torch.cat((state[0, 1:, :, :], next_image))[None, :, :, :]
 
         ####### 
+       
         if iter > 0:
+            if iter == 1:
+                del priority_queue[0]
             td_error = reward + opt.gamma * state_values[iter] - state_values[iter - 1]
             state_values = state_values + 1e-6 * td_error * eligibility
             print('td_error is' + str(td_error))
+            priority_queue.append(([state, action, reward, next_state, terminal],td_error))
+        else:
+            priority_queue.append(([state, action, reward, next_state, terminal],0))
+
+
 
         # if done:
         #     state = env.reset()
@@ -113,18 +138,41 @@ def train(opt):
         ############
         replay_memory.append([state, action, reward, next_state, terminal])
 
-        print('------')
-        print('state is ' + str(state))
-        print('action is ' + str(action))
-        print('reward is ' + str(reward))
-        print('next_state is ' + str(next_state))
-        print('terminal is ' + str(terminal))
-        print('------')
+        # print('------')
+        # print('state is ' + str(state))
+        # print('action is ' + str(action))
+        # print('reward is ' + str(reward))
+        # print('next_state is ' + str(next_state))
+        # print('terminal is ' + str(terminal))
+        # print('------')
+
+        rewards.append(reward)
+        time_step.append(iter)
+
+        print('rewrd list' + str(rewards))
+        print('iter is' + str(iter))
 
         if len(replay_memory) > opt.replay_memory_size:
             del replay_memory[0]
-        batch = sample(replay_memory, min(len(replay_memory), opt.batch_size))
-        state_batch, action_batch, reward_batch, next_state_batch, terminal_batch = zip(*batch)
+            del priority_queue[0]
+        batch1 = sample(replay_memory, min(len(replay_memory), opt.batch_size))
+        # print('Original = ' + str(batch1))
+        
+        batch_list = []
+        batch = sample_priority(min(len(priority_queue), opt.batch_size), priority_queue)
+        batch = list(batch[0][0])
+
+        batch_list.append(batch)
+        
+        # print('@@@@#@' + str(batch))
+
+        
+        # batch = list(list(batch))
+        # print('##########' + str(batch))
+
+        # print('Batch is' + str(batch))
+        ##
+        state_batch, action_batch, reward_batch, next_state_batch, terminal_batch = zip(*batch_list)
 
         state_batch = torch.cat(tuple(state for state in state_batch))
         action_batch = torch.from_numpy(
@@ -166,7 +214,8 @@ def train(opt):
         if (iter+1) % 1000000 == 0:
             torch.save(model, "{}/flappy_bird_{}".format(opt.saved_path, iter+1))
     torch.save(model, "{}/flappy_bird".format(opt.saved_path))
-
+    plt.plot(time_step,rewards)
+    plt.show()
 
 if __name__ == "__main__":
     opt = get_args()
